@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Geofence Machine Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      text-align: center;
+      background-color: #f4f4f4;
+    }
+    h3 {
+      background-color: #007bff;
+      color: white;
+      padding: 10px;
+      margin: 0;
+    }
+    #map {
+      height: 65vh;
+      width: 100%;
+    }
+    .btn-group {
+      margin: 10px 0;
+    }
+    button {
+      padding: 12px 18px;
+      font-size: 16px;
+      margin: 5px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      color: white;
+    }
+    .connect-btn { background-color: #6c757d; }
+    .send-btn    { background-color: #007bff; }
+    .start-btn   { background-color: #28a745; }
+    .stop-btn    { background-color: #dc3545; }
+  </style>
+</head>
+<body>
+
+  <h3>📍 Geofence Machine Controller</h3>
+
+  <div id="map"></div>
+
+  <div class="btn-group">
+    <button class="connect-btn" onclick="connectBluetooth()">🔗 Connect Bluetooth</button>
+    <button class="send-btn" onclick="sendArea()">📤 Send Area</button>
+    <button class="start-btn" onclick="sendCommand('START')">🟢 Start Machine</button>
+    <button class="stop-btn" onclick="sendCommand('STOP')">⏹ Stop Machine</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let map = L.map('map').setView([11.0, 78.0], 16); // Default center (Tamil Nadu)
+    let polygonPoints = [];
+    let drawnPolygon = null;
+    let device = null;
+    let characteristic = null;
+
+    // 🌍 Satellite tile layer using Esri
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/' +
+      'World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles © Esri'
+    }).addTo(map);
+
+    // Handle map click to draw polygon
+    map.on('click', function (e) {
+      polygonPoints.push([e.latlng.lat, e.latlng.lng]);
+      if (drawnPolygon) map.removeLayer(drawnPolygon);
+      drawnPolygon = L.polygon(polygonPoints, { color: 'blue' }).addTo(map);
+    });
+
+    // Bluetooth connection
+    async function connectBluetooth() {
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: 'GeoBot' }], // Change this if your device name differs
+          optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+        characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+
+        alert("✅ Bluetooth connected to GeoBot.");
+      } catch (error) {
+        console.error("❌ Bluetooth connection failed:", error);
+        alert("❌ Failed to connect to Bluetooth.");
+      }
+    }
+
+    // Send polygon area
+    async function sendArea() {
+      if (!characteristic) {
+        alert("⚠️ Connect to Bluetooth first.");
+        return;
+      }
+      if (polygonPoints.length < 3) {
+        alert("⚠️ Select at least 3 points to define an area.");
+        return;
+      }
+
+      const payload = JSON.stringify({ type: "area", data: polygonPoints });
+      const encoder = new TextEncoder();
+      await characteristic.writeValue(encoder.encode(payload));
+
+      alert("📤 Area sent to machine.");
+    }
+
+    // Send START / STOP command
+    async function sendCommand(cmd) {
+      if (!characteristic) {
+        alert("⚠️ Connect to Bluetooth first.");
+        return;
+      }
+
+      const payload = JSON.stringify({ type: "command", data: cmd });
+      const encoder = new TextEncoder();
+      await characteristic.writeValue(encoder.encode(payload));
+
+      alert(`📨 Command "${cmd}" sent.`);
+    }
+  </script>
+</body>
+</html>
+
